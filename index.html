@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Paint your scrambled Meffert's Diver's Helmet onto a 3D ball and get the shortest sequence of turns back to four rings.">
+<title>Diver's Helmet Solver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  /* Layout: one working bench. The ball on the left, the step panel on the right; stacked on phones. */
+  :root {
+    --bg: #e4ecee;
+    --surface: #f5f8f9;
+    --fg: #12222a;
+    --muted: #546a73;
+    --line: #c6d4d9;
+    --brass: #9a6418;
+    --brass-soft: #f1e3c8;
+    --danger: #b3261e;
+    --danger-soft: #f8dedb;
+    --ok: #1d7a43;
+    --red: #d8342c;
+    --yellow: #f0c010;
+    --green: #1f9a4a;
+    --blue: #2050c8;
+    --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a1920; --surface: #11242c; --fg: #e0eaed; --muted: #89a2ac; --line: #22404b;
+      --brass: #dba646; --brass-soft: #3a2e17; --danger: #ff8a80; --danger-soft: #3b1d1b; --ok: #6fd39a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1920; --surface: #11242c; --fg: #e0eaed; --muted: #89a2ac; --line: #22404b;
+    --brass: #dba646; --brass-soft: #3a2e17; --danger: #ff8a80; --danger-soft: #3b1d1b; --ok: #6fd39a;
+    color-scheme: dark;
+  }
+
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { margin: 0; }
+  body { font-family: var(--font-body); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; display: grid; gap: 20px; }
+
+  header h1 {
+    font-family: var(--font-display); font-weight: 800; font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1; letter-spacing: 0.01em; margin: 0; text-transform: uppercase; text-wrap: balance;
+  }
+  header p { margin: 8px 0 0; color: var(--muted); max-width: 62ch; }
+
+  .bench { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 760px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage { display: grid; gap: 12px; justify-items: center; }
+  .ball-box { width: 100%; max-width: 480px; aspect-ratio: 1; position: relative; }
+  canvas#ball { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  canvas#ball.dragging { cursor: grabbing; }
+  .views { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .hint { font-size: 0.875rem; color: var(--muted); text-align: center; max-width: 46ch; margin: 0; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 18px; min-width: 0; }
+  .panel h2 {
+    font-family: var(--font-display); font-weight: 600; font-size: 1.5rem; text-transform: uppercase;
+    letter-spacing: 0.04em; margin: 0; line-height: 1.1;
+  }
+  .panel p { margin: 0; }
+  .eyebrow { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--brass); font-weight: 600; }
+
+  button {
+    font: inherit; font-weight: 500; font-size: 0.9375rem; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); padding: 7px 12px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--brass); }
+  button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--brass); border-color: var(--brass); color: var(--surface); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  .palette { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch {
+    display: grid; grid-template-columns: auto auto; align-items: center; gap: 8px; padding: 6px 10px 6px 6px;
+  }
+  .swatch .chip { width: 26px; height: 26px; border-radius: 50%; border: 4px solid var(--c); background: transparent; }
+  .swatch[data-color="0"] .chip { border-style: dashed; border-color: var(--muted); }
+  .swatch .count { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+  .swatch .count.full { color: var(--ok); }
+  .swatch .count.over { color: var(--danger); }
+  .swatch[aria-pressed="true"] { border-color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass); background: var(--brass-soft); }
+
+  ol.steps-help { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; color: var(--fg); }
+  ol.steps-help li::marker { color: var(--brass); font-weight: 600; }
+
+  .notice { border-radius: 8px; padding: 10px 12px; font-size: 0.9375rem; }
+  .notice.example { background: var(--brass-soft); }
+  .notice.error { background: var(--danger-soft); color: var(--fg); }
+  .notice.error ul { margin: 6px 0 0; padding-left: 1.2em; }
+  .notice.good { background: var(--brass-soft); }
+
+  .now { display: grid; gap: 6px; }
+  .now .counter { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+  .now .move-text { font-size: 1.125rem; font-weight: 500; text-wrap: pretty; }
+  .now .move-text strong { color: var(--brass); }
+
+  ol.moves { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  ol.moves li {
+    font-family: var(--font-mono); font-size: 0.8125rem; padding: 4px 8px; border-radius: 4px;
+    border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; cursor: pointer;
+  }
+  ol.moves li.done { color: var(--fg); opacity: 0.5; }
+  ol.moves li.current { border-color: var(--brass); color: var(--fg); background: var(--brass-soft); }
+
+  details summary { cursor: pointer; color: var(--muted); font-size: 0.9375rem; }
+  details p { margin-top: 8px; color: var(--muted); font-size: 0.9375rem; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Diver's Helmet Solver</h1>
+    <p>Paint the coloured arcs on the ball below to match your Meffert's Diver's Helmet, then follow the turns back to four clean rings.</p>
+  </header>
+
+  <div class="bench">
+    <div class="stage">
+      <div class="ball-box"><canvas id="ball" aria-label="Diver's Helmet puzzle. Drag to rotate, tap an arc slot to paint it."></canvas></div>
+      <div class="views" role="group" aria-label="Preset views">
+        <button type="button" data-view="front">Front</button>
+        <button type="button" data-view="back">Back</button>
+        <button type="button" data-view="top">Top</button>
+        <button type="button" data-view="bottom">Bottom</button>
+      </div>
+      <p class="hint">Drag to turn the ball. The brass dot marks the <strong>anchor</strong> triangle at the bottom-front-left. It never moves.</p>
+    </div>
+
+    <section class="panel" id="edit-panel" aria-labelledby="edit-title">
+      <div>
+        <div class="eyebrow">Step 1</div>
+        <h2 id="edit-title">Copy your puzzle</h2>
+      </div>
+      <ol class="steps-help">
+        <li>Choose any triangle on your ball as the anchor. Hold it at the bottom-front-left, where the brass dot is.</li>
+        <li>Pick a colour, then tap the matching spot on the screen ball. Faint grey arcs show every place an arc can sit.</li>
+        <li>Turn both balls the same way to reach the back. Each colour has 4 arcs.</li>
+      </ol>
+      <div class="palette" id="palette" role="group" aria-label="Paint colour"></div>
+      <div class="notice example" id="example-note">This is an example scramble. Press <strong>Clear</strong> and enter your own.</div>
+      <div class="notice error" id="errors" hidden></div>
+      <div class="row">
+        <button type="button" class="primary" id="solve">Solve</button>
+        <button type="button" id="clear">Clear</button>
+        <button type="button" id="example">Example</button>
+      </div>
+      <details>
+        <summary>How the puzzle is built</summary>
+        <p>It is a Skewb in a ball. Each turn twists half the ball by a third of a turn around a corner: 3 diamonds and 4 triangles move together. The two plain diamonds (logo and keyring) carry no colour. The other four diamonds each carry two arcs on opposite tips, and every triangle carries one arc. When solved, four rings sit around the middle.</p>
+      </details>
+    </section>
+
+    <section class="panel" id="solve-panel" aria-labelledby="solve-title" hidden>
+      <div>
+        <div class="eyebrow">Step 2</div>
+        <h2 id="solve-title">Follow the turns</h2>
+      </div>
+      <p>Keep holding the anchor at the bottom-front-left. Each turn twists the half of the ball <em>away</em> from the anchor, around the corner named.</p>
+      <div class="now" aria-live="polite">
+        <div class="counter" id="counter"></div>
+        <div class="move-text" id="move-text"></div>
+      </div>
+      <div class="row">
+        <button type="button" id="prev">Back</button>
+        <button type="button" class="primary" id="next">Do this turn</button>
+        <button type="button" id="play">Play all</button>
+      </div>
+      <ol class="moves" id="moves" aria-label="All turns"></ol>
+      <div class="row">
+        <button type="button" id="edit">Edit position</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="model.js"></script>
+<script>
+(() => {
+  'use strict';
+  const H = window.Helmet;
+  const COLORS = [null, [216, 52, 44], [240, 192, 16], [31, 154, 74], [32, 80, 200]];
+  const COLOR_VARS = ['', '--red', '--yellow', '--green', '--blue'];
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- state ----
+  let state = new Uint8Array(48);
+  let tool = 1;
+  let mode = 'edit'; // 'edit' | 'solve'
+  let solution = [], step = 0, states = [];
+  let anim = null; // {move, t0, dur, done}
+  let playing = false;
+  let hoverSlot = -1;
+  let badPieces = new Set();
+
+  const slotLookup = new Int16Array(12 * 16).fill(-1);
+  H.SLOTS.forEach((s, i) => { slotLookup[s.edge * 16 + s.piece] = i; });
+  const D = H.DIAGS, E = H.EDGES, KEY = H.PIECE_OF_KEY;
+  const ANCHOR_DIR = H.PIECES[H.ANCHOR];
+
+  function exampleState() {
+    let s = H.solvedState([1, 4, 3, 2]); // red, blue, green, yellow around the middle
+    for (const m of [0, 3, 4, 7, 2, 5, 6, 1, 3, 0, 5]) s = H.applyMove(s, m);
+    return s;
+  }
+
+  // ---- camera ----
+  let V = viewMatrix([0.08, 0.15, 1], [0, 1, 0]);
+  function viewMatrix(dir, up) {
+    const z = H.norm(dir), x = H.norm(H.cross(up, z)), y = H.cross(z, x);
+    return [...x, ...y, ...z];
+  }
+  const VIEWS = {
+    front: [[0.08, 0.15, 1], [0, 1, 0]],
+    back: [[-0.25, 0.3, -1], [0, 1, 0]],
+    top: [[0.2, 1, 0.35], [0, 0, -1]],
+    bottom: [[0.2, -1, 0.35], [0, 0, 1]],
+  };
+  function rotCam(ax, ay) {
+    const cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay);
+    // R = Ry(ay) * Rx(ax), applied in camera space: V' = R * V
+    const R = [cy, sy * sx, sy * cx, 0, cx, -sx, -sy, cy * sx, cy * cx];
+    const out = new Array(9);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      out[i * 3 + j] = R[i * 3] * V[j] + R[i * 3 + 1] * V[3 + j] + R[i * 3 + 2] * V[6 + j];
+    }
+    // re-orthonormalise
+    const x = H.norm(out.slice(0, 3)), z = H.norm(H.cross(x, out.slice(3, 6))), y = H.cross(z, x);
+    V = [...x, ...y, ...z];
+  }
+
+  // ---- rendering ----
+  const canvas = document.getElementById('ball');
+  const ctx = canvas.getContext('2d');
+  let W = 0, img = null, dirty = true;
+
+  function resize() {
+    const css = canvas.getBoundingClientRect().width;
+    const px = Math.min(720, Math.round(css * (window.devicePixelRatio || 1)));
+    if (px !== W) { W = px; canvas.width = canvas.height = W; img = ctx.createImageData(W, W); }
+    dirty = true;
+  }
+
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  const RING_R = H.RING_R, TUBE = 0.052, SEAM = 0.010;
+  const cosOuter = Math.cos(RING_R + TUBE + 0.03), cosInner = Math.cos(Math.max(0, RING_R - TUBE - 0.03));
+  const L = H.norm([-0.45, 0.6, 0.75]);
+
+  function rotMatrix(k, t) {
+    const c = Math.cos(t), s = Math.sin(t), C = 1 - c, [x, y, z] = k;
+    return [c + x * x * C, x * y * C - z * s, x * z * C + y * s,
+            y * x * C + z * s, c + y * y * C, y * z * C - x * s,
+            z * x * C - y * s, z * y * C + x * s, c + z * z * C];
+  }
+
+  function draw() {
+    if (!img) return;
+    const data = img.data, R = W / 2 - 2, cx = W / 2, cy = W / 2, pxa = 1.25 / R;
+    const st = anim ? states[anim.from] : (mode === 'solve' ? states[step] : state);
+    let turnAxis = null, M = null;
+    if (anim) {
+      const mv = H.MOVES[anim.move];
+      turnAxis = mv.axis;
+      // show the pre-move state with the turning half rotated part of the way
+      M = rotMatrix(mv.axis, -mv.angle * (anim.reverse ? 1 - anim.p : anim.p));
+    }
+    const tint = mode === 'solve' && !anim && step < solution.length ? H.MOVES[solution[step]].axis : null;
+    const editing = mode === 'edit';
+
+    for (let py = 0; py < W; py++) {
+      const ny = -(py + 0.5 - cy) / R;
+      for (let px = 0; px < W; px++) {
+        const o = (py * W + px) * 4;
+        const nx = (px + 0.5 - cx) / R;
+        const r2 = nx * nx + ny * ny;
+        if (r2 > 1.02) { data[o + 3] = 0; continue; }
+        const nz = Math.sqrt(Math.max(0, 1 - r2));
+        // world point
+        let x = V[0] * nx + V[3] * ny + V[6] * nz;
+        let y = V[1] * nx + V[4] * ny + V[7] * nz;
+        let z = V[2] * nx + V[5] * ny + V[8] * nz;
+        const wx = x, wy = y, wz = z;
+        if (turnAxis && x * turnAxis[0] + y * turnAxis[1] + z * turnAxis[2] > 0) {
+          const X = M[0] * x + M[1] * y + M[2] * z, Y = M[3] * x + M[4] * y + M[5] * z, Z = M[6] * x + M[7] * y + M[8] * z;
+          x = X; y = Y; z = Z;
+        }
+        // which piece
+        let key = 0, seam = 9;
+        for (let i = 0; i < 4; i++) {
+          const d = x * D[i][0] + y * D[i][1] + z * D[i][2];
+          if (d > 0) key |= 1 << i;
+          const a = d < 0 ? -d : d;
+          if (a < seam) seam = a;
+        }
+        const piece = KEY[key];
+        // body
+        let r = 26, g = 29, b = 33;
+        if (badPieces.has(piece)) { r = 110; g = 30; b = 28; }
+        if (tint && wx * tint[0] + wy * tint[1] + wz * tint[2] > 0) { r += 34; g += 26; b += 6; }
+        let bump = 0;
+        // arcs
+        for (let e = 0; e < 12; e++) {
+          const m = E[e];
+          const cm = x * m[0] + y * m[1] + z * m[2];
+          if (cm < cosOuter || cm > cosInner) continue;
+          const dd = Math.abs(Math.acos(Math.min(1, cm)) - RING_R);
+          const slot = slotLookup[e * 16 + piece];
+          const col = st[slot];
+          if (col) {
+            const cov = 1 - smooth(TUBE - pxa, TUBE + pxa, dd);
+            if (cov > 0) {
+              const c = COLORS[col];
+              const hl = editing && slot === hoverSlot ? 1.15 : 1;
+              const prof = Math.sqrt(Math.max(0, 1 - (dd / TUBE) ** 2));
+              r += (c[0] * hl - r) * cov; g += (c[1] * hl - g) * cov; b += (c[2] * hl - b) * cov;
+              bump = Math.max(bump, prof * cov);
+            }
+          } else if (editing) {
+            const w = slot === hoverSlot ? TUBE * 0.9 : TUBE * 0.22;
+            const cov = (1 - smooth(w - pxa, w + pxa, dd)) * (slot === hoverSlot ? 0.55 : 0.6);
+            r += (120 - r) * cov; g += (132 - g) * cov; b += (138 - b) * cov;
+          }
+        }
+        // anchor dot
+        const ad = x * ANCHOR_DIR[0] + y * ANCHOR_DIR[1] + z * ANCHOR_DIR[2];
+        if (ad > 0.975) {
+          const ang = Math.acos(Math.min(1, ad));
+          const cov = 1 - smooth(0.13 - pxa, 0.13 + pxa, ang);
+          const ring = 1 - smooth(0.17 - pxa, 0.17 + pxa, ang);
+          r += (240 - r) * (ring - cov); g += (240 - g) * (ring - cov); b += (230 - b) * (ring - cov);
+          r += (219 - r) * cov; g += (166 - g) * cov; b += (70 - b) * cov;
+        }
+        // seams
+        const sc = 1 - smooth(SEAM - pxa * 0.6, SEAM + pxa * 0.6, seam);
+        r *= 1 - 0.85 * sc; g *= 1 - 0.85 * sc; b *= 1 - 0.85 * sc;
+        // lighting (sphere normal in camera space, tubes a little raised)
+        const lam = Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
+        const shade = 0.38 + 0.72 * lam + 0.18 * bump;
+        // specular: half vector between light and view (0,0,1)
+        const hx = L[0], hy = L[1], hz = L[2] + 1, hn = Math.hypot(hx, hy, hz);
+        const sp = Math.pow(Math.max(0, (nx * hx + ny * hy + nz * hz) / hn), 60) * (0.55 + 0.4 * bump);
+        data[o] = Math.min(255, r * shade + 255 * sp);
+        data[o + 1] = Math.min(255, g * shade + 255 * sp);
+        data[o + 2] = Math.min(255, b * shade + 255 * sp);
+        data[o + 3] = 255 * (1 - smooth(1 - 2 * pxa, 1, Math.sqrt(r2)));
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (tint) drawArrow(H.MOVES[solution[step]]);
+  }
+
+  // Arrows along the cut of the turning half, pointing the way it turns.
+  function drawArrow(mv) {
+    const R = W / 2 - 2, cx = W / 2, cy = W / 2;
+    const k = mv.axis, ref = Math.abs(k[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const a = H.norm(H.cross(ref, k)), b = H.cross(k, a);
+    const rho = 1.25; // just inside the turning half
+    const sgn = mv.clockwise ? -1 : 1;
+    const pt = (th) => {
+      const p = [0, 1, 2].map((i) => k[i] * Math.cos(rho) + (a[i] * Math.cos(th) + b[i] * Math.sin(th)) * Math.sin(rho));
+      return [V[0] * p[0] + V[1] * p[1] + V[2] * p[2], V[3] * p[0] + V[4] * p[1] + V[5] * p[2], V[6] * p[0] + V[7] * p[1] + V[8] * p[2]];
+    };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let s = 0; s < 6; s++) {
+      const th0 = s * Math.PI / 3, len = Math.PI / 4.2;
+      const pts = [];
+      for (let i = 0; i <= 16; i++) pts.push(pt(th0 + sgn * len * i / 16));
+      if (pts.some((p) => p[2] < 0.12)) continue;
+      const scr = pts.map((p) => [cx + p[0] * R, cy - p[1] * R]);
+      for (const [w, c] of [[W / 70, 'rgba(10,20,24,0.85)'], [W / 160, '#f3c35d']]) {
+        ctx.strokeStyle = c; ctx.lineWidth = w;
+        ctx.beginPath(); scr.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        const [x1, y1] = scr[scr.length - 1], [x0, y0] = scr[scr.length - 3];
+        const ang = Math.atan2(y1 - y0, x1 - x0), hs = W / 32;
+        ctx.moveTo(x1 - hs * Math.cos(ang - 0.5), y1 - hs * Math.sin(ang - 0.5));
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x1 - hs * Math.cos(ang + 0.5), y1 - hs * Math.sin(ang + 0.5));
+        ctx.stroke();
+      }
+    }
+  }
+
+  function frame(now) {
+    if (anim) {
+      anim.p = Math.min(1, (now - anim.t0) / anim.dur);
+      anim.p = anim.p < 0.5 ? 2 * anim.p * anim.p : 1 - Math.pow(-2 * anim.p + 2, 2) / 2;
+      if (now - anim.t0 >= anim.dur) { const done = anim.done; anim = null; done(); }
+      dirty = true;
+    }
+    if (dirty) { dirty = false; draw(); }
+    requestAnimationFrame(frame);
+  }
+
+  // ---- picking & dragging ----
+  function worldAt(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const nx = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
+    const r2 = nx * nx + ny * ny;
+    if (r2 > 1) return null;
+    const nz = Math.sqrt(1 - r2);
+    return [V[0] * nx + V[3] * ny + V[6] * nz, V[1] * nx + V[4] * ny + V[7] * nz, V[2] * nx + V[5] * ny + V[8] * nz];
+  }
+  function slotAtPointer(ev) {
+    const p = worldAt(ev);
+    if (!p) return -1;
+    const s = H.nearestSlot(p);
+    return Math.acos(Math.min(1, H.dot(p, H.SLOTS[s].point))) < 0.32 ? s : -1;
+  }
+
+  let drag = null;
+  canvas.addEventListener('pointerdown', (ev) => {
+    drag = { x: ev.clientX, y: ev.clientY, moved: false };
+    canvas.setPointerCapture(ev.pointerId);
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (drag) {
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      drag.moved = true; canvas.classList.add('dragging');
+      const R = canvas.getBoundingClientRect().width / 2;
+      rotCam(dy / R, dx / R);
+      drag.x = ev.clientX; drag.y = ev.clientY;
+      dirty = true;
+    } else if (mode === 'edit' && ev.pointerType === 'mouse') {
+      const s = slotAtPointer(ev);
+      if (s !== hoverSlot) { hoverSlot = s; dirty = true; }
+    }
+  });
+  canvas.addEventListener('pointerup', (ev) => {
+    const wasClick = drag && !drag.moved;
+    drag = null; canvas.classList.remove('dragging');
+    if (wasClick && mode === 'edit') {
+      const s = slotAtPointer(ev);
+      if (s >= 0) paint(s);
+    }
+  });
+  canvas.addEventListener('pointerleave', () => { if (hoverSlot !== -1) { hoverSlot = -1; dirty = true; } });
+
+  function paint(slot) {
+    const piece = H.SLOTS[slot].piece, mine = H.PIECE_SLOTS[piece];
+    const newColor = state[slot] === tool ? 0 : tool;
+    state[slot] = newColor;
+    if (newColor) {
+      if (H.isCorner(piece)) {
+        // a triangle carries one arc, so move it rather than add a second
+        for (const s of mine) if (s !== slot) state[s] = 0;
+      } else {
+        // a diamond's arcs sit on opposite tips, so clear the two tips beside this one
+        const i = mine.indexOf(slot);
+        state[mine[(i + 1) % 4]] = 0; state[mine[(i + 3) % 4]] = 0;
+      }
+    }
+    exampleNote.hidden = true;
+    badPieces = new Set(); errorsBox.hidden = true;
+    updateCounts();
+    dirty = true;
+  }
+
+  // ---- edit panel ----
+  const palette = document.getElementById('palette');
+  const exampleNote = document.getElementById('example-note');
+  const errorsBox = document.getElementById('errors');
+  const counts = [];
+  [1, 2, 3, 4, 0].forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.dataset.color = c;
+    b.style.setProperty('--c', c ? `var(${COLOR_VARS[c]})` : 'var(--muted)');
+    const name = c ? H.COLOR_NAMES[c][0].toUpperCase() + H.COLOR_NAMES[c].slice(1) : 'Erase';
+    b.innerHTML = `<span class="chip" aria-hidden="true"></span><span>${name} ${c ? '<span class="count"></span>' : ''}</span>`;
+    b.setAttribute('aria-pressed', String(c === tool));
+    b.addEventListener('click', () => {
+      tool = c;
+      palette.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', String(Number(x.dataset.color) === tool)));
+    });
+    palette.appendChild(b);
+    if (c) counts[c] = b.querySelector('.count');
+  });
+  function updateCounts() {
+    const n = [0, 0, 0, 0, 0];
+    for (const c of state) n[c]++;
+    for (let c = 1; c <= 4; c++) {
+      counts[c].textContent = `${n[c]}/4`;
+      counts[c].className = 'count' + (n[c] === 4 ? ' full' : n[c] > 4 ? ' over' : '');
+    }
+  }
+
+  function showErrors(lines) {
+    errorsBox.innerHTML = '<strong>That position doesn\'t add up yet.</strong><ul>' + lines.map((l) => `<li>${l}</li>`).join('') + '</ul>';
+    errorsBox.hidden = false;
+  }
+
+  document.getElementById('solve').addEventListener('click', () => {
+    const v = H.validate(state);
+    if (!v.ok) {
+      badPieces = new Set(v.errors.flatMap((e) => e.pieces));
+      showErrors(v.errors.map((e) => e.msg + (e.pieces.length ? ' The problem pieces are shown in red.' : '')));
+      dirty = true;
+      return;
+    }
+    if (H.isSolved(state)) {
+      errorsBox.className = 'notice good';
+      errorsBox.innerHTML = 'That position is already solved.';
+      errorsBox.hidden = false;
+      return;
+    }
+    errorsBox.className = 'notice error';
+    errorsBox.innerHTML = 'Searching…'; errorsBox.hidden = false;
+    setTimeout(() => {
+      const sol = H.solve(state);
+      if (!sol) {
+        showErrors([
+          'No sequence of turns reaches four rings from here, so something was probably entered wrong.',
+          'Check that each triangle\'s arc is on the right tip and that each diamond\'s two colours are on the correct sides.',
+        ]);
+        return;
+      }
+      errorsBox.hidden = true;
+      startSolve(sol);
+    }, 30);
+  });
+  document.getElementById('clear').addEventListener('click', () => {
+    state = new Uint8Array(48); exampleNote.hidden = true; errorsBox.hidden = true; badPieces = new Set();
+    updateCounts(); dirty = true;
+  });
+  document.getElementById('example').addEventListener('click', () => {
+    state = exampleState(); exampleNote.hidden = false; errorsBox.hidden = true; badPieces = new Set();
+    updateCounts(); dirty = true;
+  });
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
+    const [d, u] = VIEWS[b.dataset.view]; V = viewMatrix(d, u); dirty = true;
+  }));
+
+  // ---- solve panel ----
+  const editPanel = document.getElementById('edit-panel');
+  const solvePanel = document.getElementById('solve-panel');
+  const movesList = document.getElementById('moves');
+  const counter = document.getElementById('counter');
+  const moveText = document.getElementById('move-text');
+  const prevBtn = document.getElementById('prev'), nextBtn = document.getElementById('next'), playBtn = document.getElementById('play');
+
+  const arrowOf = (mv) => (mv.clockwise ? '↻' : '↺');
+  const shortName = (mv) => mv.name.split('-').map((w) => w[0].toUpperCase()).join('');
+
+  function startSolve(sol) {
+    solution = sol; step = 0;
+    states = [state];
+    for (const m of sol) states.push(H.applyMove(states[states.length - 1], m));
+    mode = 'solve'; hoverSlot = -1;
+    editPanel.hidden = true; solvePanel.hidden = false;
+    movesList.innerHTML = '';
+    sol.forEach((m, i) => {
+      const li = document.createElement('li');
+      const mv = H.MOVES[m];
+      li.textContent = `${i + 1} ${shortName(mv)}${arrowOf(mv)}`;
+      li.title = `${mv.name} corner, ${mv.clockwise ? 'clockwise' : 'anticlockwise'}`;
+      li.addEventListener('click', () => { if (!anim) { stopPlay(); step = i; refreshSolve(); } });
+      movesList.appendChild(li);
+    });
+    refreshSolve();
+  }
+
+  function refreshSolve() {
+    [...movesList.children].forEach((li, i) => { li.className = i < step ? 'done' : i === step ? 'current' : ''; });
+    if (step >= solution.length) {
+      counter.textContent = `Done in ${solution.length} turns`;
+      moveText.innerHTML = 'Four rings. Your Diver\'s Helmet is solved.';
+    } else {
+      const mv = H.MOVES[solution[step]];
+      counter.textContent = `Turn ${step + 1} of ${solution.length}`;
+      moveText.innerHTML = `Turn the half with the <strong>${mv.name}</strong> corner <strong>${mv.clockwise ? 'clockwise ↻' : 'anticlockwise ↺'}</strong>, a third of a turn, as seen looking straight at that corner.`;
+    }
+    prevBtn.disabled = step === 0;
+    nextBtn.disabled = step >= solution.length;
+    playBtn.disabled = step >= solution.length;
+    dirty = true;
+  }
+
+  function animate(fromIdx, move, reverse, done) {
+    if (reduceMotion) { done(); return; }
+    anim = { from: fromIdx, move, reverse, p: 0, t0: performance.now(), dur: 650, done };
+  }
+  nextBtn.addEventListener('click', () => {
+    if (anim || step >= solution.length) return;
+    stopPlay();
+    animate(step, solution[step], false, () => { step++; refreshSolve(); });
+  });
+  prevBtn.addEventListener('click', () => {
+    if (anim || step === 0) return;
+    stopPlay();
+    animate(step - 1, solution[step - 1], true, () => { step--; refreshSolve(); });
+  });
+  function stopPlay() { playing = false; playBtn.textContent = 'Play all'; }
+  playBtn.addEventListener('click', () => {
+    if (playing) { stopPlay(); return; }
+    playing = true; playBtn.textContent = 'Pause';
+    const tick = () => {
+      if (!playing || step >= solution.length) { stopPlay(); refreshSolve(); return; }
+      animate(step, solution[step], false, () => { step++; refreshSolve(); setTimeout(tick, 350); });
+    };
+    if (!anim) tick();
+  });
+  document.getElementById('edit').addEventListener('click', () => {
+    stopPlay(); anim = null;
+    if (step > 0) state = states[step].slice();
+    mode = 'edit'; solvePanel.hidden = true; editPanel.hidden = false;
+    updateCounts(); dirty = true;
+  });
+
+  // ---- boot ----
+  state = exampleState();
+  updateCounts();
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
