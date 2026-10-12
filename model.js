@@ -10,7 +10,9 @@
 (function (root) {
   'use strict';
 
-  const RING_R = 0.40; // angular radius of a ring, radians
+  // Angular radius of a ring. Junctions along a cut are 60 degrees apart, so at 30 degrees
+  // neighbouring rings meet on the seam and every arc touches another one, as on the real puzzle.
+  const RING_R = Math.PI / 6;
 
   const v = (x, y, z) => [x, y, z];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
