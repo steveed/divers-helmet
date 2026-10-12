@@ -1,0 +1,12 @@
+services:
+  node:
+    image: node:22
+    working_dir: /app
+    volumes:
+      - .:/app
+  web:
+    image: nginx:1.27-alpine
+    volumes:
+      - .:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
